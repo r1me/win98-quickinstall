@@ -1,3 +1,4 @@
+#include <locale.h>
 #include <stdio.h>
 #include <stdint.h>
 
@@ -5,6 +6,8 @@
 
 int main (int argc, char*argv[])
 {
+    setlocale(LC_ALL, "");
+    
     printf("MercyPak Packer V0.3\n");
 
     if (argc != 3) {
