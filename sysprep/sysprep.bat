@@ -79,6 +79,7 @@ del /Q /F /A "%OSWINDIR%"\SYSBCKUP\*
 del /Q /F /A "%OSWINDIR%"\INF\MDM*.INF
 del /Q /F /A "%OSWINDIR%"\INF\WDMA_*.INF
 del /Q /F /A "%OSWINDIR%"\RECENT\*
+del /Q /F /A "%OSROOT%\WIN386.SWP"
 del /Q /F /A "%OSROOT%"\BOOTLOG.*
 del /Q /F /A "%OSROOT%\FRUNLOG.TXT"
 del /Q /F /A "%OSROOT%\DETLOG.TXT"
@@ -164,7 +165,26 @@ exit /b
     del /Q /F /A USER.DAT
     xcopy /H /Y %1 .
     xcopy /H /Y %2 .
-    %BASEDIR%\tools\msdos.exe regedit.exe /L:SYSTEM.DAT /R:USER.DAT %3
+    copy %3 tmp.reg
+
+    if exist "%OSWINDIR%\SYSTEM\SHELL32.W98" (
+        echo 98Lite on Win98 detected, using SHELL32.W98 reboot method
+        echo "Reboot"="RUNDLL32.EXE SHELL32.W98,SHExitWindowsEx 2" >>tmp.reg
+    ) else (
+        :: batch doesn't have else if ............
+        if exist "%OSWINDIR%\SYSTEM\SHELL32.WME" (
+            echo 98Lite on WinME detected, using SHELL32.WME reboot method
+            echo "Reboot"="RUNDLL32.EXE SHELL32.WME,SHExitWindowsEx 2" >>tmp.reg
+        ) else (
+            echo Stock Win98 detected, using SHELL32.DLL reboot method
+            echo "Reboot"="RUNDLL32.EXE SHELL32.DLL,SHExitWindowsEx 2" >>tmp.reg
+        )
+    )
+
+    %BASEDIR%\tools\msdos.exe regedit.exe /L:SYSTEM.DAT /R:USER.DAT tmp.reg
+
+    del /Q /F /A tmp.reg 
+
     xcopy /H /Y SYSTEM.DAT "%REGTMP%\%OSRELATIVEWINDIR%"
     xcopy /H /Y USER.DAT "%REGTMP%\%OSRELATIVEWINDIR%"
     %BASEDIR%\mercypak\mercypak32.exe "%REGTMP%" %4
