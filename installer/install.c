@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <utime.h>
 #include <unistd.h>
+#include <locale.h>
 
 #include "mappedfile.h"
 #include "util.h"
@@ -34,6 +35,7 @@ typedef enum {
     INSTALL_MBR_ACTIVE_BOOT_PROMPT,
     INSTALL_REGISTRY_VARIANT_PROMPT,
     INSTALL_INTEGRATED_DRIVERS_PROMPT,
+    INSTALL_SET_LOCALE,
     INSTALL_DO_INSTALL,
 } inst_InstallStep;
 
@@ -264,6 +266,13 @@ static inline bool inst_getMercyPakString(mappedFile *file, char *dst) {
     return success;
 }
 
+/*  */
+static void inst_showLocaleBox(const char *localename) {
+    char *prompt = ui_makeDialogMenuLabel("Locale set to %s test: Domyślny sygnał dźwiękowy", localename);
+    ui_showMessageBox(prompt);
+    free(prompt);
+}
+
 static bool inst_copyFiles(mappedFile *file, const char *installPath) {
     char fileHeader[5] = {0};
     char *destPath = malloc(strlen(installPath) + 256 + 1);   // Full path of destination dir/file, the +256 is because mercypak strings can only be 255 chars max
@@ -314,18 +323,22 @@ static bool inst_copyFiles(mappedFile *file, const char *installPath) {
     success = true;
 
     ui_progressBoxInit("Copying Files...");
-
+    
     for (uint32_t f = 0; f < fileCount; f++) {
         uint8_t fileFlags;
         uint16_t fileDate;
         uint16_t fileTime;
         uint32_t fileSize;
 
-        ui_progressBoxUpdate(f, fileCount);
+        /* ui_progressBoxUpdate(f, fileCount); */
 
         /* Mercypak file metadata (see mercypak.txt) */
 
         success &= inst_getMercyPakString(file, destPathAppend);    // First, filename string
+        
+        printf("File: %s\n", destPathAppend);
+        
+        
         util_stringReplaceChar(destPathAppend, '\\', '/');          // DOS paths innit 
         success &= mappedFile_getUInt8(file, &fileFlags);           // DOS Flags byte 
         success &= mappedFile_getUInt16(file, &fileDate);           // DOS Date
@@ -407,12 +420,55 @@ static const char *inst_askUserForRegistryVariant() {
     return options[menuResult];
 }
 
+/* */
+static const char *inst_askUserForLocale() {
+    static const char pl1[] = "cp1250";
+    static const char pl2[] = "pl_PL.1250";
+    static const char pl3[] = "cp1252";
+    static const char pl4[] = "cp852";    
+    static const char *options[] = { NULL, pl1, pl2, pl3, pl4 };
+    char **menuLabels;
+
+    menuLabels = ui_allocateDialogMenuLabelList(0);
+
+    ui_addDialogMenuLabelToList(&menuLabels, 
+                                ui_makeDialogMenuLabel("Do not set"),
+                                ui_makeDialogMenuLabel("Do not set"));
+
+    printf("%s %s\n", menuLabels[0], menuLabels[1]);
+    
+    ui_addDialogMenuLabelToList(&menuLabels, 
+                                ui_makeDialogMenuLabel("cp1250"),
+                                ui_makeDialogMenuLabel("cp1250"));    
+
+    ui_addDialogMenuLabelToList(&menuLabels, 
+                                ui_makeDialogMenuLabel("pl_PL.1250"),
+                                ui_makeDialogMenuLabel("pl_PL.1250"));
+                                
+    ui_addDialogMenuLabelToList(&menuLabels, 
+                                ui_makeDialogMenuLabel("cp1252"),
+                                ui_makeDialogMenuLabel("cp1252"));
+
+    ui_addDialogMenuLabelToList(&menuLabels, 
+                                ui_makeDialogMenuLabel("cp852"),
+                                ui_makeDialogMenuLabel("cp852"));                                
+
+    int menuResult = ui_showMenu("Select locale...", menuLabels, false);
+    ui_destroyDialogMenuLabelList(menuLabels);
+    
+    assert(menuResult >= 0 && menuResult < 5);
+    return options[menuResult];
+}
+
 /* Main installer process. Assumes the CDROM environment variable is set to a path with valid install.txt, FULL.866 and DRIVER.866 files. */
 bool inst_main() {
     mappedFile *sourceFile = NULL;
     size_t readahead = util_getProcSafeFreeMemory() / 2;
     util_HardDiskArray hda = { 0, NULL };
     const char *registryUnpackFile = NULL;
+    const char *customLocale = NULL;
+    const char *newLocale = NULL;
+    
     util_Partition *destinationPartition = NULL;
     inst_InstallStep currentStep = INSTALL_WELCOME;
 
@@ -491,8 +547,19 @@ bool inst_main() {
                 goToNext = true;
                 break;
             }
-
+  
+            case INSTALL_SET_LOCALE: {
+                customLocale = inst_askUserForLocale();
+                goToNext = true;
+                break;
+            }
             case INSTALL_DO_INSTALL: {
+                if (customLocale != NULL) {
+                  newLocale = setlocale(LC_ALL, customLocale);
+                  if (newLocale != NULL)
+                    inst_showLocaleBox(customLocale);
+                }
+                
                 // sourceFile is already opened at this point for readahead prebuffering
                 installSuccess = inst_copyFiles(sourceFile, destinationPartition->mountPath);
                 mappedFile_close(sourceFile);
